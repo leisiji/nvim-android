@@ -1,5 +1,7 @@
 local M = {}
 local fn = vim.fn
+local sync = false
+
 
 local gradle_deps = {
   jars = {},
@@ -57,6 +59,7 @@ local function parse_output(_, data, _)
     end
   end
   require("android.lsp").notify(gradle_deps.jars)
+  sync = true
 end
 
 function M.sync()
@@ -75,6 +78,12 @@ function M.generate_classpath()
   end
   classpath[#classpath+1] = [[</classpath>]]
   fn.writefile(classpath, vim.fn.getcwd().."/.classpath")
+end
+
+function M.load()
+  if vim.env["ANDROID_SDK_ROOT"] ~= nil and sync == false then
+    M.sync()
+  end
 end
 
 return M
