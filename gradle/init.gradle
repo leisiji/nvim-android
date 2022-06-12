@@ -1,0 +1,139 @@
+/**
+ * This files contains custom tasks used by the vim-android plugin.
+ */
+
+allprojects { project ->
+  task variants {
+    task -> doLast {
+      if (project.hasProperty('android')) {
+        project.android.applicationVariants.all { variant ->
+          System.err.println variant.name
+        }
+      }
+    }
+  }
+
+  task vim {
+    task -> doLast {
+      System.err.println ""
+      System.err.println "gradle_version " + gradleVersion
+      System.err.println "vim_project " + project.name
+
+
+      if(project.hasProperty('android')) {
+
+        // Inspect android properties.
+        // System.err.println project.properties.entrySet()*.toString()
+
+        if(project.android.defaultConfig.targetSdkVersion != null) {
+          def level = project.android.defaultConfig.targetSdkVersion.getApiLevel()
+          System.err.println "vim_target android-" + level
+        }
+
+        // Android API jar file
+        // e.g. /home/ryujin/Apps/android-sdk/platforms/android-29/android.jar
+        project.android.bootClasspath.each { bootClass ->
+          System.err.println "vim_gradle " + bootClass
+        }
+
+        if(project.android.hasProperty('applicationVariants')) {
+          project.android.applicationVariants.all { variant ->
+            System.err.println "vim_gradle " + project.buildDir + "/intermediates/javac/" + variant.name + "/classes"
+            variant.sourceSets.each { srcSet ->
+              srcSet.javaDirectories.each { javaDir ->
+                System.err.println "vim_src " + javaDir
+              }
+            }
+
+            variant.getCompileClasspath().each {
+              System.err.println "vim_gradle " + it
+            }
+          }
+        }
+
+        if(project.android.hasProperty('testVariants')) {
+          project.android.testVariants.all { variant ->
+            System.err.println "vim_gradle " + project.buildDir + "/intermediates/javac/" + variant.name + "/classes"
+            variant.getCompileClasspath().each {
+               System.err.println "vim_gradle " + it
+            }
+            variant.sourceSets.each { srcSet ->
+              srcSet.javaDirectories.each { javaDir ->
+                System.err.println "vim_src " + javaDir
+              }
+            }
+          }
+        }
+      } else {
+        // Print build class directories. These assume the project follows a
+        // standard gradle project with a main and test source sets. Custom
+        // projects that change the build dir will not work.
+        println "vim-builddir " + project.buildDir + '/classes/java/main'
+        println "vim-builddir " + project.buildDir + '/classes/java/test'
+        println "vim-builddir " + project.buildDir + '/classes/kotlin/main'
+        println "vim-builddir " + project.buildDir + '/classes/kotlin/test'
+
+        // Print the list of all dependencies jar files. This allows vim to parse
+        // the list and fill the CLASSPATH with the list of dependencies.
+        project.configurations.findAll {
+          it.metaClass.respondsTo(it, "isCanBeResolved") ? it.isCanBeResolved() : false
+        }.each {
+          it.resolve().each {
+            if(it.inspect().endsWith("jar")) {
+              System.err.println "vim_gradle " + it
+            } else if(it.inspect().endsWith("aar")) {
+              // If the dependency is an AAR file we try to determine the location
+              // of the classes.jar file in the exploded aar folder.
+              def splitted = it.inspect().split("/")
+              def namespace = splitted[-5]
+              def name = splitted[-4]
+              def version = splitted[-3]
+              def explodedPath = "$project.buildDir/intermediates/exploded-aar" +
+                                 "/$namespace/$name/$version/jars/classes.jar"
+              System.err.println "vim_gradle " + explodedPath
+            }
+          }
+        }
+      }
+    }
+  }
+
+  project.afterEvaluate {
+    def hasAndroid = project.getPlugins().hasPlugin('android') ||
+                   project.getPlugins().hasPlugin('android_library')
+
+    if(hasAndroid) {
+      // Ensure linter outputs XML report. We parse it after the build finishes.
+      configure(android.lintOptions) {
+        textReport false
+        xmlReport true
+        abortOnError true
+      }
+    }
+  }
+
+  project.gradle.buildFinished { result ->
+
+    if( project.hasProperty('android') ) {
+      def filePath = project.android.lintOptions.xmlOutput
+      if( filePath == null ) {
+        filePath = file([project.projectDir, "build", "outputs", "lint-results.xml"].join(File.separator))
+      }
+      if( !filePath.exists() ) {
+        filePath = file([project.projectDir, "build", "reports", "lint-results.xml"].join(File.separator))
+      }
+      if( filePath.exists() ) {
+        def xml = (new XmlParser()).parse(filePath)
+        xml.issue.each { issue ->
+          issue.location.each { location ->
+            def explanation = issue.@explanation.split("(?<=\\G.{70})")
+            System.err.println "lint: ${issue.@severity} ${location.@file}:${location.@line}:${location.@column} ${issue.@message}"
+            for(line in explanation) {
+              System.err.println "      ${line}"
+            }
+          }
+        }
+      }
+    }
+  }
+}
