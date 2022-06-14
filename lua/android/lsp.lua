@@ -52,16 +52,16 @@ end
 function M.notify(jars)
   local clients = vim.lsp.get_active_clients()
   for _, c in pairs(clients) do
-    if c.config.cmd ~= nil then
+    if c.config.settings.java then
+      jdtls_notify(c, jars)
+      break
+    elseif c.config.cmd ~= nil then
       for _, v in pairs(c.config.cmd) do
         if v == "java-language-server" then
           jls_notify(c, jars)
           return
         end
       end
-    elseif c.config.settings.java then
-      jdtls_notify(c, jars)
-      break
     end
   end
 end
